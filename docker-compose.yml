@@ -1,0 +1,84 @@
+# docker-compose.yml — Environnement complet NikeBasket
+# --------------------------------------------------------
+# Lance 3 services en une seule commande : docker-compose up
+#   - postgres : base de données PostgreSQL
+#   - backend  : API REST Node.js/Express (port 3001)
+#   - frontend : SPA React via Vite (port 5173)
+#
+# Usage :
+#   docker-compose up         # Démarrer en arrière-plan
+#   docker-compose down       # Arrêter et supprimer les conteneurs
+#   docker-compose logs -f    # Voir les logs en temps réel
+
+version: '3.9'
+
+services:
+
+  # -- Base de données PostgreSQL -----------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: nikebasket_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB:       ecommerce
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # -- Backend Node.js/Express --------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nikebasket_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV:      development
+      PORT:          3001
+      PG_HOST:       postgres
+      PG_PORT:       5432
+      PG_USER:       postgres
+      PG_PASSWORD:   postgres
+      PG_DATABASE:   ecommerce
+      JWT_SECRET:    dev_secret_changez_en_production_32chars
+      JWT_EXPIRES_IN: 24h
+      FRONTEND_URL:  http://localhost:5173
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - uploads_data:/app/uploads
+
+  # -- Frontend React/Vite ------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nikebasket_front
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_API_URL: http://localhost:3001
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+volumes:
+  postgres_data:
+  uploads_data:

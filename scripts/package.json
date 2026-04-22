@@ -1,0 +1,20 @@
+{
+  "name": "nikebasket-scripts",
+  "version": "1.0.0",
+  "description": "Scripts de migration MySQL → PostgreSQL et génération de données de test",
+  "scripts": {
+    "migrate": "node migrate.js",
+    "seed": "node seed.js",
+    "seed:100": "node seed.js --rows=100",
+    "seed:produits": "node seed.js --table=produits",
+    "seed:csv": "node seed.js --format=csv"
+  },
+  "dependencies": {
+    "@faker-js/faker": "^9.3.0",
+    "bcrypt": "^5.1.1",
+    "chalk": "^4.1.2",
+    "dotenv": "^16.4.5",
+    "mysql2": "^3.11.3",
+    "pg": "^8.13.1"
+  }
+}
