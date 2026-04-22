@@ -73,13 +73,13 @@ jobs:
         working-directory: backend
 
     env:
-      NODE_ENV:   test
-      DB_HOST:    localhost
-      DB_PORT:    5432
-      DB_USER:    nikebasket
-      DB_PASS:    nikebasket_secret
-      DB_NAME:    ecommerce_test
-      JWT_SECRET: ci_test_secret_key_not_for_production
+      NODE_ENV:     test
+      PG_HOST:      localhost
+      PG_PORT:      5432
+      PG_USER:      nikebasket
+      PG_PASSWORD:  nikebasket_secret
+      PG_DATABASE:  ecommerce_test
+      JWT_SECRET:   ci_test_secret_key_not_for_production
 
     steps:
       - name: Checkout
