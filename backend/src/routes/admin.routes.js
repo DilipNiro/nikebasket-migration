@@ -2,7 +2,7 @@
 const express = require('express');
 const router  = express.Router();
 const { verifyToken, requireAdmin, requireAdminOrEmploye } = require('../middleware/auth');
-const { getStats, getAllOrders, updateOrderStatus, getAllUsers, updateUserRole } = require('../controllers/admin.controller');
+const { getStats, getAllOrders, updateOrderStatus, getAllUsers, updateUserRole, deleteUser } = require('../controllers/admin.controller');
 
 // Toutes les routes admin nécessitent d'être connecté
 router.use(verifyToken);
@@ -15,7 +15,8 @@ router.get('/orders',          requireAdminOrEmploye, getAllOrders);
 router.put('/orders/:id',      requireAdminOrEmploye, updateOrderStatus);
 
 // Gestion utilisateurs (admin uniquement)
-router.get('/users',           requireAdmin, getAllUsers);
-router.put('/users/:id/role',  requireAdmin, updateUserRole);
+router.get('/users',            requireAdmin, getAllUsers);
+router.put('/users/:id/role',   requireAdmin, updateUserRole);
+router.delete('/users/:id',     requireAdmin, deleteUser);
 
 module.exports = router;

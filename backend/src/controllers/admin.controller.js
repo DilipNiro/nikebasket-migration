@@ -243,4 +243,34 @@ async function updateUserRole(req, res, next) {
   }
 }
 
-module.exports = { getStats, getAllOrders, updateOrderStatus, getAllUsers, updateUserRole };
+/**
+ * DELETE /api/admin/users/:id
+ * Suppression d'un utilisateur (admin uniquement).
+ * Impossible de se supprimer soi-même.
+ */
+async function deleteUser(req, res, next) {
+  try {
+    const { id } = req.params;
+
+    // Empêcher l'admin de se supprimer lui-même
+    if (parseInt(id) === req.user.id) {
+      return res.status(400).json({ error: 'Vous ne pouvez pas supprimer votre propre compte' });
+    }
+
+    const { rowCount } = await pool.query(
+      'DELETE FROM "user" WHERE id = $1',
+      [id]
+    );
+
+    if (rowCount === 0) {
+      return res.status(404).json({ error: 'Utilisateur non trouvé' });
+    }
+
+    res.json({ message: 'Utilisateur supprimé avec succès' });
+
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { getStats, getAllOrders, updateOrderStatus, getAllUsers, updateUserRole, deleteUser };

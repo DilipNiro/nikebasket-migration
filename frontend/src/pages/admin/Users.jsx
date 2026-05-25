@@ -2,7 +2,9 @@
 // Page absente du PHP original — ajout identifié avec le maître de stage
 
 import { useState, useEffect } from 'react';
-import api from '../../api/axios';
+import Swal from 'sweetalert2';
+import api  from '../../api/axios';
+import { useAuth } from '../../context/AuthContext';
 
 const ROLES = ['client', 'employe', 'admin'];
 const ROLE_COLORS = {
@@ -12,6 +14,7 @@ const ROLE_COLORS = {
 };
 
 export default function AdminUsers() {
+  const { user: me }          = useAuth();
   const [users,   setUsers]   = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -26,7 +29,30 @@ export default function AdminUsers() {
       const res = await api.put(`/admin/users/${id}/role`, { role });
       setUsers(u => u.map(x => x.id === id ? res.data.user : x));
     } catch (err) {
-      alert(err.response?.data?.error || 'Erreur');
+      Swal.fire({ icon: 'error', title: 'Erreur', text: err.response?.data?.error || 'Erreur', confirmButtonColor: '#111' });
+    }
+  }
+
+  async function handleDelete(id, nom) {
+    const result = await Swal.fire({
+      title:              `Supprimer ${nom} ?`,
+      text:               'Cette action est irréversible.',
+      icon:               'warning',
+      showCancelButton:   true,
+      confirmButtonColor: '#d32f2f',
+      cancelButtonColor:  '#aaa',
+      confirmButtonText:  'Supprimer',
+      cancelButtonText:   'Annuler',
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      await api.delete(`/admin/users/${id}`);
+      setUsers(u => u.filter(x => x.id !== id));
+      Swal.fire({ icon: 'success', title: 'Supprimé', text: `${nom} a été supprimé.`, confirmButtonColor: '#111' });
+    } catch (err) {
+      Swal.fire({ icon: 'error', title: 'Erreur', text: err.response?.data?.error || 'Erreur', confirmButtonColor: '#111' });
     }
   }
 
@@ -40,7 +66,7 @@ export default function AdminUsers() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={styles.thead}>
-              {['ID', 'Nom', 'Email', 'Rôle', 'Inscription', 'Action'].map(h => (
+              {['ID', 'Nom', 'Email', 'Rôle', 'Inscription', 'Rôle', 'Supprimer'].map(h => (
                 <th key={h} style={styles.th}>{h}</th>
               ))}
             </tr>
@@ -70,6 +96,16 @@ export default function AdminUsers() {
                       {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
                     </select>
                   </td>
+                  <td style={styles.td}>
+                    {user.id !== me?.id && (
+                      <button
+                        onClick={() => handleDelete(user.id, user.nom)}
+                        style={styles.deleteBtn}
+                      >
+                        Supprimer
+                      </button>
+                    )}
+                  </td>
                 </tr>
               );
             })}
@@ -89,4 +125,5 @@ const styles = {
   td:        { padding: '0.75rem 1rem', verticalAlign: 'middle', fontSize: '0.9rem' },
   roleBadge: { padding: '0.25rem 0.65rem', borderRadius: '20px', fontSize: '0.8rem', fontWeight: '600' },
   select:    { padding: '0.35rem 0.5rem', border: '1px solid #ddd', borderRadius: '4px', fontSize: '0.85rem', cursor: 'pointer' },
+  deleteBtn: { padding: '0.3rem 0.75rem', background: '#fff', color: '#d32f2f', border: '1px solid #d32f2f', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' },
 };

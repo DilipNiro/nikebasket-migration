@@ -18,17 +18,34 @@ export default function AdminProducts() {
   const [error,        setError]        = useState('');
   const [search,       setSearch]       = useState('');
   const [filterStatut, setFilterStatut] = useState('');
+  const [page,         setPage]         = useState(1);
+  const [pagination,   setPagination]   = useState({ total: 0, limit: 20 });
   const [uploading,    setUploading]    = useState({ main: false, hover: false });
   const mainFileRef  = useRef(null);
   const hoverFileRef = useRef(null);
 
+  // Chargement des produits avec pagination côté serveur
+  useEffect(() => {
+    setLoading(true);
+    const params = new URLSearchParams({ page, limit: 20 });
+    if (search)       params.set('search', search);
+    if (filterStatut) params.set('statut', filterStatut);
+
+    api.get(`/products?${params}`)
+      .then(r => {
+        setProducts(r.data.products || []);
+        setPagination(r.data.pagination || { total: 0, limit: 20 });
+      })
+      .finally(() => setLoading(false));
+  }, [page, search, filterStatut]);
+
+  // Référentiels (chargés une seule fois)
   useEffect(() => {
     Promise.all([
-      api.get('/products?limit=200&statut=').then(r => setProducts(r.data.products || [])),
       api.get('/products/categories').then(r => setCategories(r.data.categories || [])),
       api.get('/products/tailles').then(r => setTailles(r.data.tailles || [])),
       api.get('/products/couleurs').then(r => setCouleurs(r.data.couleurs || [])),
-    ]).finally(() => setLoading(false));
+    ]);
   }, []);
 
   function openCreate() {
@@ -135,24 +152,30 @@ export default function AdminProducts() {
     setProducts(p => p.filter(x => x.id !== id));
   }
 
-  const filtered = products.filter(p =>
-    (!search       || p.nom.toLowerCase().includes(search.toLowerCase())) &&
-    (!filterStatut || p.statut === filterStatut)
-  );
+  const totalPages = Math.ceil(pagination.total / pagination.limit);
 
   if (loading) return <p>Chargement...</p>;
 
   return (
     <div>
       <div style={styles.header}>
-        <h1 style={styles.title}>Produits ({products.length})</h1>
+        <h1 style={styles.title}>Produits ({pagination.total})</h1>
         <button onClick={openCreate} style={styles.addBtn}>+ Nouveau produit</button>
       </div>
 
       {/* Filtres */}
       <div style={styles.filters}>
-        <input placeholder="Rechercher..." value={search} onChange={e => setSearch(e.target.value)} style={styles.input} />
-        <select value={filterStatut} onChange={e => setFilterStatut(e.target.value)} style={styles.input}>
+        <input
+          placeholder="Rechercher..."
+          value={search}
+          onChange={e => { setSearch(e.target.value); setPage(1); }}
+          style={styles.input}
+        />
+        <select
+          value={filterStatut}
+          onChange={e => { setFilterStatut(e.target.value); setPage(1); }}
+          style={styles.input}
+        >
           <option value="">Tous les statuts</option>
           {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
@@ -169,7 +192,7 @@ export default function AdminProducts() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map(p => (
+            {products.map(p => (
               <tr key={p.id} style={styles.tr}>
                 <td style={styles.td}>
                   <img src={p.image_url} alt={p.nom} style={styles.thumb} onError={e => { e.target.style.display = 'none'; }} />
@@ -196,6 +219,19 @@ export default function AdminProducts() {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div style={styles.pagination}>
+          <button onClick={() => setPage(p => p - 1)} disabled={page === 1} style={styles.pageBtn}>
+            ← Précédent
+          </button>
+          <span style={styles.pageInfo}>Page {page} / {totalPages}</span>
+          <button onClick={() => setPage(p => p + 1)} disabled={page === totalPages} style={styles.pageBtn}>
+            Suivant →
+          </button>
+        </div>
+      )}
 
       {/* Modal création / édition */}
       {modal && (
@@ -343,6 +379,9 @@ const styles = {
   title:       { fontSize: '1.5rem', fontWeight: 'bold', margin: 0 },
   addBtn:      { background: '#111', color: '#fff', border: 'none', padding: '0.6rem 1.2rem', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' },
   filters:     { display: 'flex', gap: '1rem', marginBottom: '1rem' },
+  pagination:  { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '1.5rem' },
+  pageBtn:     { padding: '0.5rem 1rem', border: '1px solid #ddd', borderRadius: '4px', background: '#fff', cursor: 'pointer', fontSize: '0.9rem' },
+  pageInfo:    { fontSize: '0.9rem', color: '#666' },
   input:       { padding: '0.5rem', border: '1px solid #ddd', borderRadius: '4px', fontSize: '0.9rem' },
   table:       { background: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' },
   thead:       { background: '#f5f5f5' },
