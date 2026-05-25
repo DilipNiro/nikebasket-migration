@@ -28,6 +28,18 @@ export function AuthProvider({ children }) {
 
   async function login(email, password) {
     const res = await api.post('/auth/login', { email, password });
+    // Si la 2FA est activée, le backend répond { requires_2fa: true }
+    // On ne définit pas encore l'utilisateur — Login.jsx gère l'étape suivante
+    if (res.data.requires_2fa) {
+      return { requires_2fa: true };
+    }
+    setUser(res.data.user);
+    return res.data.user;
+  }
+
+  // Deuxième étape du login : vérification du code TOTP
+  async function verify2FA(code) {
+    const res = await api.post('/auth/2fa/verify', { code });
     setUser(res.data.user);
     return res.data.user;
   }
@@ -44,7 +56,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, verify2FA }}>
       {children}
     </AuthContext.Provider>
   );

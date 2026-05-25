@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { Link }               from 'react-router-dom';
+import Swal                   from 'sweetalert2';
 import api                    from '../api/axios';
 import { useAuth }            from '../context/AuthContext';
 
@@ -22,11 +23,63 @@ export default function Profile() {
   const [orders,   setOrders]     = useState([]);
   const [loading,  setLoading]    = useState(true);
 
+  // -- État 2FA --
+  const [twoFaEnabled,  setTwoFaEnabled]  = useState(user?.two_fa_enabled || false);
+  const [twoFaSetup,    setTwoFaSetup]    = useState(null);  // { secret, qrCode }
+  const [twoFaCode,     setTwoFaCode]     = useState('');
+  const [twoFaLoading,  setTwoFaLoading]  = useState(false);
+
   useEffect(() => {
     api.get('/orders')
       .then(res => setOrders(res.data.orders))
       .finally(() => setLoading(false));
   }, []);
+
+  // -- Handlers 2FA --
+
+  async function handleSetup2FA() {
+    setTwoFaLoading(true);
+    try {
+      const { data } = await api.get('/auth/2fa/setup');
+      setTwoFaSetup(data);
+      setTwoFaCode('');
+    } catch (err) {
+      Swal.fire({ icon: 'error', title: 'Erreur', text: err.response?.data?.error || 'Erreur lors de la génération du QR code', confirmButtonColor: '#111' });
+    } finally {
+      setTwoFaLoading(false);
+    }
+  }
+
+  async function handleEnable2FA(e) {
+    e.preventDefault();
+    setTwoFaLoading(true);
+    try {
+      await api.post('/auth/2fa/enable', { secret: twoFaSetup.secret, code: twoFaCode });
+      setTwoFaEnabled(true);
+      setTwoFaSetup(null);
+      setTwoFaCode('');
+      Swal.fire({ icon: 'success', title: '2FA activée', text: 'Votre compte est maintenant protégé par Google Authenticator.', confirmButtonColor: '#111' });
+    } catch (err) {
+      Swal.fire({ icon: 'error', title: 'Code incorrect', text: err.response?.data?.error || 'Vérifiez le code et réessayez.', confirmButtonColor: '#111' });
+    } finally {
+      setTwoFaLoading(false);
+    }
+  }
+
+  async function handleDisable2FA(e) {
+    e.preventDefault();
+    setTwoFaLoading(true);
+    try {
+      await api.delete('/auth/2fa/disable', { data: { code: twoFaCode } });
+      setTwoFaEnabled(false);
+      setTwoFaCode('');
+      Swal.fire({ icon: 'success', title: '2FA désactivée', text: 'L\'authentification à deux facteurs a été désactivée.', confirmButtonColor: '#111' });
+    } catch (err) {
+      Swal.fire({ icon: 'error', title: 'Code incorrect', text: err.response?.data?.error || 'Vérifiez le code et réessayez.', confirmButtonColor: '#111' });
+    } finally {
+      setTwoFaLoading(false);
+    }
+  }
 
   // Calculs statistiques (équivalent PHP profile.php)
   const totalDepense = orders.reduce((sum, o) => sum + parseFloat(o.montant_total), 0);
@@ -72,6 +125,77 @@ export default function Profile() {
         <Link to="/change-password" style={styles.actionLink}>
           Changer mon mot de passe
         </Link>
+      </div>
+
+      {/* Sécurité — Authentification à deux facteurs */}
+      <div style={styles.twoFaCard}>
+        <div style={styles.twoFaHeader}>
+          <div>
+            <h3 style={styles.twoFaTitle}>Authentification à deux facteurs (2FA)</h3>
+            <p style={styles.twoFaDesc}>
+              Renforcez la sécurité de votre compte avec Google Authenticator.
+            </p>
+          </div>
+          <span style={{ ...styles.twoFaBadge, background: twoFaEnabled ? '#e8f5e9' : '#fce4ec', color: twoFaEnabled ? '#2e7d32' : '#b71c1c' }}>
+            {twoFaEnabled ? 'Activée' : 'Désactivée'}
+          </span>
+        </div>
+
+        {/* Activation : affichage du QR code */}
+        {!twoFaEnabled && twoFaSetup && (
+          <div style={styles.twoFaSetup}>
+            <p style={styles.twoFaStep}>1. Scannez ce QR code avec Google Authenticator :</p>
+            <img src={twoFaSetup.qrCode} alt="QR Code 2FA" style={styles.qrCode} />
+            <p style={styles.twoFaStep}>2. Entrez le code à 6 chiffres affiché dans l'application :</p>
+            <form onSubmit={handleEnable2FA} style={styles.twoFaForm}>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                value={twoFaCode}
+                onChange={e => setTwoFaCode(e.target.value.replace(/\D/g, ''))}
+                placeholder="000000"
+                style={styles.twoFaInput}
+                autoComplete="one-time-code"
+              />
+              <button type="submit" disabled={twoFaLoading || twoFaCode.length !== 6} style={{ ...styles.twoFaBtnPrimary, opacity: (twoFaLoading || twoFaCode.length !== 6) ? 0.6 : 1 }}>
+                {twoFaLoading ? 'Vérification...' : 'Activer la 2FA'}
+              </button>
+              <button type="button" onClick={() => setTwoFaSetup(null)} style={styles.twoFaBtnSecondary}>
+                Annuler
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* Bouton pour lancer le setup */}
+        {!twoFaEnabled && !twoFaSetup && (
+          <button onClick={handleSetup2FA} disabled={twoFaLoading} style={styles.twoFaBtnPrimary}>
+            {twoFaLoading ? 'Chargement...' : 'Activer la 2FA'}
+          </button>
+        )}
+
+        {/* Désactivation */}
+        {twoFaEnabled && (
+          <form onSubmit={handleDisable2FA} style={styles.twoFaForm}>
+            <p style={styles.twoFaStep}>Entrez votre code Google Authenticator pour désactiver la 2FA :</p>
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              value={twoFaCode}
+              onChange={e => setTwoFaCode(e.target.value.replace(/\D/g, ''))}
+              placeholder="000000"
+              style={styles.twoFaInput}
+              autoComplete="one-time-code"
+            />
+            <button type="submit" disabled={twoFaLoading || twoFaCode.length !== 6} style={{ ...styles.twoFaBtnDanger, opacity: (twoFaLoading || twoFaCode.length !== 6) ? 0.6 : 1 }}>
+              {twoFaLoading ? 'Vérification...' : 'Désactiver la 2FA'}
+            </button>
+          </form>
+        )}
       </div>
 
       {/* Liste des commandes */}
@@ -134,6 +258,19 @@ const styles = {
   actions:       { marginBottom: '2rem' },
   actionLink:    { display: 'inline-block', padding: '0.6rem 1.25rem', border: '1px solid #ddd', borderRadius: '6px', fontSize: '0.9rem', color: '#333', textDecoration: 'none', background: '#fff' },
   sectionTitle:  { fontSize: '1.2rem', fontWeight: '600', marginBottom: '1rem' },
+  twoFaCard:        { background: '#fff', border: '1px solid #eee', borderRadius: '10px', padding: '1.5rem', marginBottom: '2rem' },
+  twoFaHeader:      { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' },
+  twoFaTitle:       { fontSize: '1rem', fontWeight: '600', margin: '0 0 0.25rem' },
+  twoFaDesc:        { color: '#888', fontSize: '0.85rem', margin: 0 },
+  twoFaBadge:       { padding: '0.25rem 0.75rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: '600', flexShrink: 0 },
+  twoFaSetup:       { marginTop: '1rem' },
+  twoFaStep:        { fontSize: '0.9rem', color: '#444', margin: '0.75rem 0 0.5rem' },
+  qrCode:           { display: 'block', width: '180px', height: '180px', margin: '0.5rem 0 1rem' },
+  twoFaForm:        { display: 'flex', flexDirection: 'column', gap: '0.75rem', maxWidth: '280px' },
+  twoFaInput:       { padding: '0.65rem', border: '1px solid #ddd', borderRadius: '6px', fontSize: '1.3rem', textAlign: 'center', letterSpacing: '0.3em', fontWeight: 'bold' },
+  twoFaBtnPrimary:  { padding: '0.65rem 1.25rem', background: '#111', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer' },
+  twoFaBtnDanger:   { padding: '0.65rem 1.25rem', background: '#d32f2f', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer' },
+  twoFaBtnSecondary: { padding: '0.6rem 1.25rem', background: 'transparent', color: '#666', border: '1px solid #ddd', borderRadius: '6px', fontSize: '0.9rem', cursor: 'pointer' },
   emptyState:    { textAlign: 'center', padding: '2rem', color: '#888' },
   btn:           { display: 'inline-block', marginTop: '0.75rem', background: '#111', color: '#fff', padding: '0.65rem 1.25rem', borderRadius: '6px', textDecoration: 'none', fontWeight: 'bold' },
   orderList:     { display: 'flex', flexDirection: 'column', gap: '0.75rem' },

@@ -6,6 +6,7 @@ const { verifyToken } = require('../middleware/auth');
 const {
   register, login, logout, getMe,
   forgotPassword, resetPassword, changePassword,
+  setup2FA, enable2FA, disable2FA, verify2FA,
   registerValidation, loginValidation,
 } = require('../controllers/auth.controller');
 
@@ -82,5 +83,44 @@ router.post('/reset-password', resetPassword);
  *     security: [{ cookieAuth: [] }]
  */
 router.put('/change-password', verifyToken, changePassword);
+
+/**
+ * @swagger
+ * /api/auth/2fa/setup:
+ *   get:
+ *     summary: Génère un secret TOTP et un QR code (à scanner dans Google Authenticator)
+ *     tags: [Auth]
+ *     security: [{ cookieAuth: [] }]
+ */
+router.get('/2fa/setup', verifyToken, setup2FA);
+
+/**
+ * @swagger
+ * /api/auth/2fa/enable:
+ *   post:
+ *     summary: Active la 2FA après vérification du premier code TOTP
+ *     tags: [Auth]
+ *     security: [{ cookieAuth: [] }]
+ */
+router.post('/2fa/enable', verifyToken, enable2FA);
+
+/**
+ * @swagger
+ * /api/auth/2fa/disable:
+ *   delete:
+ *     summary: Désactive la 2FA (nécessite un code TOTP valide)
+ *     tags: [Auth]
+ *     security: [{ cookieAuth: [] }]
+ */
+router.delete('/2fa/disable', verifyToken, disable2FA);
+
+/**
+ * @swagger
+ * /api/auth/2fa/verify:
+ *   post:
+ *     summary: Deuxième étape du login — vérifie le code TOTP
+ *     tags: [Auth]
+ */
+router.post('/2fa/verify', verify2FA);
 
 module.exports = router;

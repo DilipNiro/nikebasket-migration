@@ -1,12 +1,14 @@
 // src/controllers/auth.controller.js — Authentification
 // -------------------------------------------------------
-// Gère : inscription, connexion, déconnexion, profil
+// Gère : inscription, connexion, déconnexion, profil, 2FA TOTP
 // Équivalent PHP : auth/functionInsription.php + auth/functionLogin.php
 
-const bcrypt  = require('bcrypt');
-const jwt     = require('jsonwebtoken');
+const bcrypt   = require('bcrypt');
+const jwt      = require('jsonwebtoken');
+const speakeasy = require('speakeasy');
+const qrcode   = require('qrcode');
 const { body, validationResult } = require('express-validator');
-const pool    = require('../config/db');
+const pool     = require('../config/db');
 
 // -- Helpers ------------------------------------------------------
 
@@ -119,7 +121,7 @@ async function login(req, res, next) {
 
     // Recherche de l'utilisateur
     const { rows } = await pool.query(
-      'SELECT id, nom, email, password, role FROM "user" WHERE email = $1',
+      'SELECT id, nom, email, password, role, secret FROM "user" WHERE email = $1',
       [email]
     );
 
@@ -136,7 +138,25 @@ async function login(req, res, next) {
       return res.status(401).json({ error: 'Identifiants incorrects' });
     }
 
-    // Génération du token JWT et cookie
+    // Si la 2FA est activée → token éphémère et demande du code TOTP
+    if (user.secret) {
+      const pendingToken = jwt.sign(
+        { id: user.id, pending_2fa: true },
+        process.env.JWT_SECRET,
+        { expiresIn: '5m' }
+      );
+
+      res.cookie('pending_token', pendingToken, {
+        httpOnly: true,
+        secure:   process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge:   5 * 60 * 1000, // 5 minutes
+      });
+
+      return res.json({ requires_2fa: true });
+    }
+
+    // Connexion normale (sans 2FA)
     setTokenCookie(res, { id: user.id, email: user.email, role: user.role });
 
     res.json({
@@ -166,7 +186,7 @@ function logout(req, res) {
 async function getMe(req, res, next) {
   try {
     const { rows } = await pool.query(
-      'SELECT id, nom, email, role, created_at FROM "user" WHERE id = $1',
+      'SELECT id, nom, email, role, created_at, (secret IS NOT NULL) AS two_fa_enabled FROM "user" WHERE id = $1',
       [req.user.id]
     );
 
@@ -212,8 +232,31 @@ async function forgotPassword(req, res, next) {
       [tokenHash, expires, rows[0].id]
     );
 
-    // En développement : retourner le lien directement
     const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${token}`;
+
+    // Envoi de l'email si SMTP configuré, sinon mode développement (lien dans la réponse)
+    if (process.env.SMTP_HOST) {
+      const { sendMail } = require('../config/mailer');
+      await sendMail({
+        to:      email,
+        subject: 'Réinitialisation de votre mot de passe — NikeBasket',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #111;">Réinitialisation de mot de passe</h2>
+            <p>Vous avez demandé à réinitialiser votre mot de passe. Cliquez sur le lien ci-dessous :</p>
+            <a href="${resetLink}"
+               style="display:inline-block; padding: 12px 24px; background:#111; color:#fff;
+                      text-decoration:none; border-radius:6px; margin: 16px 0;">
+              Réinitialiser mon mot de passe
+            </a>
+            <p style="color:#888; font-size:0.85rem;">Ce lien expire dans 1 heure. Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.</p>
+          </div>
+        `,
+      });
+      return res.json({ message: 'Si cet email existe, un lien vous a été envoyé.' });
+    }
+
+    // Mode développement (sans SMTP) : retourner le lien dans la réponse
     res.json({ message: 'Lien de réinitialisation généré.', reset_link: resetLink });
 
   } catch (err) {
@@ -321,6 +364,196 @@ async function changePassword(req, res, next) {
   }
 }
 
+// -- 2FA TOTP --------------------------------------------------
+
+/**
+ * GET /api/auth/2fa/setup
+ * Génère un secret TOTP et un QR code à scanner dans Google Authenticator.
+ * Le secret N'est PAS encore sauvegardé — seulement après /2fa/enable.
+ * Nécessite verifyToken.
+ */
+async function setup2FA(req, res, next) {
+  try {
+    // Vérifier que la 2FA n'est pas déjà active
+    const { rows } = await pool.query(
+      'SELECT secret FROM "user" WHERE id = $1',
+      [req.user.id]
+    );
+    if (rows[0]?.secret) {
+      return res.status(409).json({ error: 'La 2FA est déjà activée sur ce compte' });
+    }
+
+    // Générer un secret TOTP (20 octets → 32 caractères base32)
+    const secret = speakeasy.generateSecret({
+      name:   `NikeBasket (${req.user.email})`,
+      length: 20,
+    });
+
+    // Convertir l'URL otpauth en QR code base64 pour affichage direct
+    const qrCodeDataUrl = await qrcode.toDataURL(secret.otpauth_url);
+
+    res.json({
+      secret:  secret.base32,
+      qrCode:  qrCodeDataUrl,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/auth/2fa/enable
+ * Vérifie le premier code TOTP saisi par l'utilisateur, puis sauvegarde le secret.
+ * Body : { secret, code }
+ * Nécessite verifyToken.
+ */
+async function enable2FA(req, res, next) {
+  try {
+    const { secret, code } = req.body;
+    if (!secret || !code) {
+      return res.status(400).json({ error: 'Secret et code TOTP requis' });
+    }
+
+    // Vérifier le code TOTP (window: 1 = tolérance d'une période de 30s)
+    const valid = speakeasy.totp.verify({
+      secret,
+      encoding: 'base32',
+      token:    code,
+      window:   1,
+    });
+
+    if (!valid) {
+      return res.status(400).json({ error: 'Code incorrect. Vérifiez l\'heure de votre appareil.' });
+    }
+
+    // Sauvegarder le secret dans la base
+    await pool.query(
+      'UPDATE "user" SET secret = $1 WHERE id = $2',
+      [secret, req.user.id]
+    );
+
+    res.json({ message: 'Authentification à deux facteurs activée avec succès.' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * DELETE /api/auth/2fa/disable
+ * Désactive la 2FA. Demande un dernier code valide pour confirmer.
+ * Body : { code }
+ * Nécessite verifyToken.
+ */
+async function disable2FA(req, res, next) {
+  try {
+    const { code } = req.body;
+    if (!code) {
+      return res.status(400).json({ error: 'Code TOTP requis pour désactiver la 2FA' });
+    }
+
+    const { rows } = await pool.query(
+      'SELECT secret FROM "user" WHERE id = $1',
+      [req.user.id]
+    );
+
+    if (!rows[0]?.secret) {
+      return res.status(400).json({ error: 'La 2FA n\'est pas activée sur ce compte' });
+    }
+
+    // Vérifier le code TOTP
+    const valid = speakeasy.totp.verify({
+      secret:   rows[0].secret,
+      encoding: 'base32',
+      token:    code,
+      window:   1,
+    });
+
+    if (!valid) {
+      return res.status(400).json({ error: 'Code incorrect' });
+    }
+
+    // Supprimer le secret
+    await pool.query(
+      'UPDATE "user" SET secret = NULL WHERE id = $1',
+      [req.user.id]
+    );
+
+    res.json({ message: 'Authentification à deux facteurs désactivée.' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/auth/2fa/verify
+ * Deuxième étape du login : vérifie le code TOTP.
+ * Utilise le cookie pending_token (JWT éphémère 5min posé par /login).
+ * Si le code est valide, émet le vrai cookie JWT.
+ * Body : { code }
+ */
+async function verify2FA(req, res, next) {
+  try {
+    const { code } = req.body;
+    if (!code) {
+      return res.status(400).json({ error: 'Code TOTP requis' });
+    }
+
+    // Lire le token éphémère posé par /login
+    const pendingToken = req.cookies?.pending_token;
+    if (!pendingToken) {
+      return res.status(401).json({ error: 'Session expirée. Veuillez vous reconnecter.' });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(pendingToken, process.env.JWT_SECRET);
+    } catch {
+      return res.status(401).json({ error: 'Session expirée. Veuillez vous reconnecter.' });
+    }
+
+    if (!decoded.pending_2fa) {
+      return res.status(401).json({ error: 'Token invalide' });
+    }
+
+    // Récupérer l'utilisateur et son secret TOTP
+    const { rows } = await pool.query(
+      'SELECT id, nom, email, role, secret FROM "user" WHERE id = $1',
+      [decoded.id]
+    );
+
+    if (rows.length === 0 || !rows[0].secret) {
+      return res.status(401).json({ error: 'Utilisateur introuvable' });
+    }
+
+    const user = rows[0];
+
+    // Vérifier le code TOTP
+    const valid = speakeasy.totp.verify({
+      secret:   user.secret,
+      encoding: 'base32',
+      token:    code,
+      window:   1,
+    });
+
+    if (!valid) {
+      return res.status(400).json({ error: 'Code incorrect' });
+    }
+
+    // Supprimer le cookie éphémère
+    res.clearCookie('pending_token', { httpOnly: true, sameSite: 'lax' });
+
+    // Émettre le vrai JWT
+    setTokenCookie(res, { id: user.id, email: user.email, role: user.role });
+
+    res.json({
+      message: 'Connexion réussie',
+      user:    { id: user.id, nom: user.nom, email: user.email, role: user.role },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   register,
   login,
@@ -329,6 +562,10 @@ module.exports = {
   forgotPassword,
   resetPassword,
   changePassword,
+  setup2FA,
+  enable2FA,
+  disable2FA,
+  verify2FA,
   registerValidation,
   loginValidation,
 };
