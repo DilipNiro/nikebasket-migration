@@ -27,6 +27,7 @@ const productRoutes  = require('./routes/products.routes');
 const cartRoutes     = require('./routes/cart.routes');
 const orderRoutes    = require('./routes/orders.routes');
 const adminRoutes    = require('./routes/admin.routes');
+const paymentRoutes  = require('./routes/payments.routes');
 
 const path = require('path');
 const app  = express();
@@ -52,6 +53,7 @@ app.use('/api/products', productRoutes);
 app.use('/api/cart',     cartRoutes);
 app.use('/api/orders',   orderRoutes);
 app.use('/api/admin',    adminRoutes);
+app.use('/api/payments', paymentRoutes);
 
 // Route de santé (utile pour Docker/CI)
 app.get('/api/health', (req, res) => {

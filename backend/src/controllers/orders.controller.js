@@ -169,11 +169,27 @@ async function createOrder(req, res, next) {
       );
     }
 
-    // 7. Enregistrer le paiement (simulé — intégration Stripe possible)
+    // 7. Vérifier le PaymentIntent Stripe si fourni, sinon paiement simulé
+    const { payment_intent_id } = req.body;
+    let transactionId = `simule_${commande.id}`;
+    let modePaiement  = 'simulation';
+
+    if (payment_intent_id && process.env.STRIPE_SECRET_KEY) {
+      const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+      const pi = await stripe.paymentIntents.retrieve(payment_intent_id);
+      if (pi.status !== 'succeeded') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Paiement Stripe non confirmé' });
+      }
+      transactionId = pi.id;
+      modePaiement  = pi.payment_method_types?.[0] || 'card';
+    }
+
+    // Enregistrer le paiement
     await client.query(
-      `INSERT INTO "paiement" (user_id, commande_id, montant, statut_paiement)
-       VALUES ($1, $2, $3, 'succes')`,
-      [req.user.id, commande.id, montant_total.toFixed(2)]
+      `INSERT INTO "paiement" (user_id, commande_id, montant, statut_paiement, transaction_id, mode_paiement)
+       VALUES ($1, $2, $3, 'succes', $4, $5)`,
+      [req.user.id, commande.id, montant_total.toFixed(2), transactionId, modePaiement]
     );
 
     // 8. Historique de statut initial
