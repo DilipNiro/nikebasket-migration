@@ -1,0 +1,14 @@
+# monitoring/prometheus.yml — Configuration Prometheus
+# -------------------------------------------------------
+# Prometheus scrape le backend NikeBasket toutes les 15 secondes
+# sur l'endpoint GET /metrics (exposé par prom-client).
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'nikebasket-backend'
+    static_configs:
+      - targets: ['backend:3001']
+    metrics_path: '/metrics'

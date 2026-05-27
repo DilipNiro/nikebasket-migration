@@ -4,6 +4,7 @@ const router  = express.Router();
 const path    = require('path');
 const multer  = require('multer');
 const { verifyToken, requireAdmin } = require('../middleware/auth');
+const { cache, clearCache }         = require('../middleware/cache');
 const {
   getProducts, getProductById, getCategories, getTailles, getCouleurs,
   createProduct, updateProduct, deleteProduct,
@@ -44,16 +45,26 @@ router.post('/upload', verifyToken, requireAdmin, upload.single('image'), (req, 
   res.json({ url });
 });
 
-router.get('/categories', getCategories);
-router.get('/tailles',    getTailles);
-router.get('/couleurs',   getCouleurs);
-router.get('/',           getProducts);
-router.get('/:id',        getProductById);
+// Cache 5 min sur les listes statiques, 2 min sur le catalogue (filtres variés)
+router.get('/categories', cache(300), getCategories);
+router.get('/tailles',    cache(300), getTailles);
+router.get('/couleurs',   cache(300), getCouleurs);
+router.get('/',           cache(120), getProducts);
+router.get('/:id',        cache(120), getProductById);
 
-// Routes admin uniquement
-router.post('/',         verifyToken, requireAdmin, productValidation, createProduct);
-router.put('/:id',       verifyToken, requireAdmin, updateProduct);
-router.delete('/:id',    verifyToken, requireAdmin, deleteProduct);
+// Routes admin — invalide le cache après mutation
+router.post('/',         verifyToken, requireAdmin, productValidation, async (req, res, next) => {
+  await clearCache('cache:GET:/api/products*');
+  next();
+}, createProduct);
+router.put('/:id',       verifyToken, requireAdmin, async (req, res, next) => {
+  await clearCache('cache:GET:/api/products*');
+  next();
+}, updateProduct);
+router.delete('/:id',    verifyToken, requireAdmin, async (req, res, next) => {
+  await clearCache('cache:GET:/api/products*');
+  next();
+}, deleteProduct);
 router.get('/:id/stock', verifyToken, requireAdmin, getProductStock);
 router.put('/:id/stock', verifyToken, requireAdmin, updateProductStock);
 

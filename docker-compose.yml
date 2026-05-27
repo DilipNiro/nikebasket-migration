@@ -1,9 +1,12 @@
 # docker-compose.yml — Environnement complet NikeBasket
 # --------------------------------------------------------
-# Lance 3 services en une seule commande : docker-compose up
-#   - postgres : base de données PostgreSQL
-#   - backend  : API REST Node.js/Express (port 3001)
-#   - frontend : SPA React via Vite (port 5173)
+# Lance 6 services en une seule commande : docker-compose up
+#   - postgres   : base de données PostgreSQL
+#   - redis      : cache (endpoints lents)
+#   - backend    : API REST Node.js/Express (port 3001)
+#   - frontend   : SPA React via Vite (port 5173)
+#   - prometheus : collecte des métriques (port 9090)
+#   - grafana    : dashboards de monitoring (port 3000)
 #
 # Usage :
 #   docker-compose up         # Démarrer en arrière-plan
@@ -34,6 +37,19 @@ services:
       timeout: 5s
       retries: 5
 
+  # -- Cache Redis --------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: nikebasket_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # -- Backend Node.js/Express --------------------------------------
   backend:
     build:
@@ -43,6 +59,8 @@ services:
     restart: unless-stopped
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     environment:
       NODE_ENV:      development
@@ -55,6 +73,7 @@ services:
       JWT_SECRET:    dev_secret_changez_en_production_32chars
       JWT_EXPIRES_IN: 24h
       FRONTEND_URL:  http://localhost:5173
+      REDIS_URL:     redis://redis:6379
     ports:
       - "3001:3001"
     volumes:
@@ -79,6 +98,41 @@ services:
       - ./frontend:/app
       - /app/node_modules
 
+  # -- Prometheus (collecte des métriques) --------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: nikebasket_prometheus
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    depends_on:
+      - backend
+
+  # -- Grafana (dashboards de monitoring) ---------------------------
+  grafana:
+    image: grafana/grafana:latest
+    container_name: nikebasket_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER:     admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP:     'false'
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
 volumes:
   postgres_data:
   uploads_data:
+  prometheus_data:
+  grafana_data:

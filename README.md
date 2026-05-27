@@ -15,9 +15,12 @@ Migration d'un site e-commerce **PHP/MySQL** vers une architecture **React / Nod
 | Backend | Node.js + Express 4 + JWT (cookie httpOnly) |
 | Base de données | PostgreSQL 16 |
 | Client BDD | pg (node-postgres) |
-| Authentification | bcrypt + JWT |
-| Upload fichiers | multer |
+| Authentification | bcrypt + JWT + 2FA TOTP |
+| Paiement | Stripe (PaymentIntent) |
+| Upload fichiers | multer + Cloudinary |
 | Documentation API | Swagger/OpenAPI |
+| Cache | Redis (ioredis) |
+| Monitoring | Prometheus + Grafana |
 | Environnement | Docker Compose |
 
 ---
@@ -46,6 +49,8 @@ docker exec nikebasket_api node scripts/seed.js
 | Frontend (site) | http://localhost:5173 |
 | API REST | http://localhost:3001 |
 | Swagger (doc API) | http://localhost:3001/api/docs |
+| Grafana (monitoring) | http://localhost:3000 (admin/admin) |
+| Prometheus | http://localhost:9090 |
 
 ---
 
@@ -103,6 +108,8 @@ node scripts/seed.js
 nikebasket-migration/
 ├── audit/
 │   └── audit-owasp.md        ← Audit sécurité OWASP Top 10
+├── monitoring/
+│   └── prometheus.yml         ← Config scrape Prometheus (toutes les 15s)
 ├── database/
 │   └── schema.sql             ← Schéma PostgreSQL (12 tables)
 ├── backend/
@@ -111,9 +118,13 @@ nikebasket-migration/
 │   │   ├── migrate.js         ← Migration MySQL → PostgreSQL
 │   │   └── seed.js            ← Génération de données de test (Faker)
 │   └── src/
-│       ├── config/db.js       ← Pool de connexions PostgreSQL
+│       ├── config/
+│       │   ├── db.js          ← Pool de connexions PostgreSQL
+│       │   ├── redis.js       ← Client Redis (cache)
+│       │   └── metrics.js     ← Métriques Prometheus (prom-client)
 │       ├── middleware/
 │       │   ├── auth.js        ← Vérification JWT + rôles
+│       │   ├── cache.js       ← Cache Redis (TTL configurable)
 │       │   └── errorHandler.js← Erreurs centralisées
 │       ├── routes/            ← auth / products / cart / orders / admin
 │       ├── controllers/       ← Logique métier
@@ -300,4 +311,7 @@ JWT_EXPIRES_IN=24h
 PORT=3001
 NODE_ENV=development
 FRONTEND_URL=http://localhost:5173
+
+# Redis (laisser vide → mode dégradé sans cache)
+REDIS_URL=redis://localhost:6379
 ```

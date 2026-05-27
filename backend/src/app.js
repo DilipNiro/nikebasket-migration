@@ -21,7 +21,8 @@ const cookieParser = require('cookie-parser');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi    = require('swagger-ui-express');
 
-const errorHandler   = require('./middleware/errorHandler');
+const errorHandler                    = require('./middleware/errorHandler');
+const { metricsMiddleware, metricsHandler } = require('./config/metrics');
 const authRoutes     = require('./routes/auth.routes');
 const productRoutes  = require('./routes/products.routes');
 const cartRoutes     = require('./routes/cart.routes');
@@ -43,6 +44,9 @@ app.use(cors({
 app.use(cookieParser());
 app.use(express.json());
 
+// -- Métriques Prometheus (instrumentation HTTP) ------------------
+app.use(metricsMiddleware);
+
 // -- Fichiers statiques (images uploadées) ------------------------
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
@@ -59,6 +63,9 @@ app.use('/api/payments', paymentRoutes);
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// Route métriques Prometheus (scrapée par Prometheus toutes les 15s)
+app.get('/metrics', metricsHandler);
 
 // -- Swagger (documentation auto-générée) ------------------------
 

@@ -140,9 +140,70 @@
 
 ---
 
+## Semaine 7 — 27 mai → 2 juin
+
+### Cache Redis sur les endpoints lents
+
+**Contexte :** Les endpoints `GET /api/products`, `/categories`, `/tailles` et `/couleurs` exécutent des requêtes SQL complètes à chaque appel. Sous charge, ces lectures répétées dégradent les performances. La solution standard en production est un cache en mémoire entre l'API et la base de données.
+
+**Ce qui a été implémenté :**
+
+- `backend/src/config/redis.js` — client ioredis avec connexion lazy et mode dégradé gracieux (l'app continue de fonctionner si Redis est absent)
+- `backend/src/middleware/cache.js` — middleware `cache(ttl)` factory : vérifie le cache Redis avant le controller, met en cache la réponse JSON ; fonction `clearCache(pattern)` pour l'invalidation
+- `products.routes.js` mis à jour : `GET /` et `GET /:id` cachés 2 min ; `/categories`, `/tailles`, `/couleurs` cachés 5 min
+- Invalidation automatique sur POST/PUT/DELETE produit (`clearCache('cache:GET:/api/products*')`)
+- Header `X-Cache: HIT/MISS` sur chaque réponse mise en cache
+- Cache désactivé en `NODE_ENV=test` pour ne pas dépendre de Redis dans les tests
+
+**Nouvelle variable `.env` :** `REDIS_URL=redis://localhost:6379`
+
+**Librairies ajoutées :** `ioredis`
+
+---
+
+### Monitoring Grafana + Prometheus
+
+**Contexte :** Le projet n'avait aucune visibilité sur le comportement en production (taux d'erreur, latence des endpoints, utilisation mémoire Node.js). Grafana + Prometheus est le stack standard pour monitorer une API Node.js.
+
+**Ce qui a été implémenté :**
+
+**Backend :**
+- `backend/src/config/metrics.js` — instrumentation `prom-client` : compteur `nikebasket_http_requests_total` (method/route/status), histogramme `nikebasket_http_request_duration_ms`, métriques système Node.js (CPU, mémoire, event loop, GC) via `collectDefaultMetrics`
+- `app.js` mis à jour : middleware `metricsMiddleware` monté avant les routes, endpoint `GET /metrics` exposé au format texte Prometheus
+- `collectDefaultMetrics` désactivé en `NODE_ENV=test` pour éviter les handles ouverts dans Jest
+
+**Infrastructure :**
+- `monitoring/prometheus.yml` — configuration Prometheus : scrape le backend toutes les 15s sur `/metrics`
+- `docker-compose.yml` mis à jour — 3 nouveaux services : `redis` (port 6379), `prometheus` (port 9090), `grafana` (port 3000 — admin/admin)
+
+**Accès :**
+| Service | URL |
+|---|---|
+| Grafana | http://localhost:3000 (admin/admin) |
+| Prometheus | http://localhost:9090 |
+| Métriques brutes | http://localhost:3001/metrics |
+
+> Dans Grafana : ajouter une source de données Prometheus (`http://prometheus:9090`) puis créer des panels avec les métriques `nikebasket_http_requests_total` et `nikebasket_http_request_duration_ms`.
+
+**Librairies ajoutées :** `prom-client`
+
+---
+
 ## Résumé des fichiers modifiés / créés
 
-### Backend
+### Backend (Semaine 7)
+
+| Fichier | Type |
+|---|---|
+| `src/config/redis.js` | Créé — client ioredis (mode dégradé gracieux) |
+| `src/config/metrics.js` | Créé — métriques Prometheus (prom-client) |
+| `src/middleware/cache.js` | Créé — middleware cache Redis + invalidation |
+| `src/routes/products.routes.js` | Modifié — cache sur GET + invalidation sur mutations |
+| `src/app.js` | Modifié — metricsMiddleware + GET /metrics |
+| `monitoring/prometheus.yml` | Créé — config scrape Prometheus |
+| `docker-compose.yml` | Modifié — services redis, prometheus, grafana |
+
+### Backend (Semaines 1–6)
 
 | Fichier | Type |
 |---|---|
