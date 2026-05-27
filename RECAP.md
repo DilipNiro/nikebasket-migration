@@ -111,37 +111,6 @@
 - Contrôles Précédent / Suivant avec indicateur "Page X / Y"
 - Réinitialisation automatique à la page 1 lors d'un nouveau filtre ou d'une recherche
 
----
-
-## Semaine 6 — 2 → 10 juin
-
-### Stockage d'images Cloudinary
-
-**Contexte :** Les images de produits étaient stockées sur le filesystem local du serveur (`/uploads`). Cela ne passe pas à l'échelle (volumes Docker non persistants par défaut, impossible sur plusieurs instances). Le rapport de soutenance identifiait S3/Cloudinary comme prochaine étape naturelle.
-
-**Ce qui a été implémenté :**
-
-- `backend/src/config/cloudinary.js` — configuration Cloudinary v2 + middleware Multer avec `multer-storage-cloudinary`
-- `products.routes.js` mis à jour : détection automatique de l'environnement — si `CLOUDINARY_CLOUD_NAME` est défini → upload Cloudinary ; sinon → stockage local inchangé (développement sans compte)
-- Transformation automatique appliquée : resize `800×800` `limit` (pas d'agrandissement)
-- Nouvelles variables `.env` : `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
-
-**Librairies ajoutées :** `cloudinary`, `multer-storage-cloudinary`
-
-### React Error Boundary
-
-**Contexte :** Sans Error Boundary, un crash dans un composant React laisse une page complètement blanche sans message d'explication.
-
-**Ce qui a été implémenté :**
-
-- `frontend/src/components/ErrorBoundary.jsx` — class component avec `getDerivedStateFromError` + `componentDidCatch`
-- Affichage d'une page d'erreur générique avec bouton "Rafraîchir la page"
-- Intégré dans `App.jsx` autour de toute l'application
-
----
-
-## Semaine 7 — 27 mai → 2 juin
-
 ### Cache Redis sur les endpoints lents
 
 **Contexte :** Les endpoints `GET /api/products`, `/categories`, `/tailles` et `/couleurs` exécutent des requêtes SQL complètes à chaque appel. Sous charge, ces lectures répétées dégradent les performances. La solution standard en production est un cache en mémoire entre l'API et la base de données.
@@ -158,8 +127,6 @@
 **Nouvelle variable `.env` :** `REDIS_URL=redis://localhost:6379`
 
 **Librairies ajoutées :** `ioredis`
-
----
 
 ### Monitoring Grafana + Prometheus
 
@@ -189,9 +156,36 @@
 
 ---
 
+## Semaine 6 — 2 → 10 juin
+
+### Stockage d'images Cloudinary
+
+**Contexte :** Les images de produits étaient stockées sur le filesystem local du serveur (`/uploads`). Cela ne passe pas à l'échelle (volumes Docker non persistants par défaut, impossible sur plusieurs instances). Le rapport de soutenance identifiait S3/Cloudinary comme prochaine étape naturelle.
+
+**Ce qui a été implémenté :**
+
+- `backend/src/config/cloudinary.js` — configuration Cloudinary v2 + middleware Multer avec `multer-storage-cloudinary`
+- `products.routes.js` mis à jour : détection automatique de l'environnement — si `CLOUDINARY_CLOUD_NAME` est défini → upload Cloudinary ; sinon → stockage local inchangé (développement sans compte)
+- Transformation automatique appliquée : resize `800×800` `limit` (pas d'agrandissement)
+- Nouvelles variables `.env` : `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
+
+**Librairies ajoutées :** `cloudinary`, `multer-storage-cloudinary`
+
+### React Error Boundary
+
+**Contexte :** Sans Error Boundary, un crash dans un composant React laisse une page complètement blanche sans message d'explication.
+
+**Ce qui a été implémenté :**
+
+- `frontend/src/components/ErrorBoundary.jsx` — class component avec `getDerivedStateFromError` + `componentDidCatch`
+- Affichage d'une page d'erreur générique avec bouton "Rafraîchir la page"
+- Intégré dans `App.jsx` autour de toute l'application
+
+---
+
 ## Résumé des fichiers modifiés / créés
 
-### Backend (Semaine 7)
+### Backend (Semaine 5)
 
 | Fichier | Type |
 |---|---|
@@ -255,6 +249,9 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 CLOUDINARY_CLOUD_NAME=...
 CLOUDINARY_API_KEY=...
 CLOUDINARY_API_SECRET=...
+
+# Redis (laisser vide → mode dégradé sans cache)
+REDIS_URL=redis://localhost:6379
 ```
 
 ```env
